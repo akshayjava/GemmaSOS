@@ -102,6 +102,78 @@ The demo includes 12 test scenarios covering:
 
 See `DEMO_GUIDE.md` for detailed testing instructions.
 
+## 🔌 Integration Guide
+
+### Quick Integration
+
+The GemmaSOS system is designed for easy integration into existing applications. Choose your integration method:
+
+#### **1. Direct Integration (Recommended)**
+```python
+from crisis_detector import CrisisDetector
+from response_generator import CrisisResponseGenerator
+from safety_system import SafetySystem
+
+# Initialize components
+crisis_detector = CrisisDetector()
+response_generator = CrisisResponseGenerator()
+safety_system = SafetySystem()
+
+# Process user input
+def handle_user_message(text):
+    # Validate input
+    validation = safety_system.validate_input(text=text)
+    if not validation["is_safe"]:
+        return "Content cannot be processed safely."
+    
+    # Detect crisis
+    crisis_result = crisis_detector.detect_crisis_from_text(text)
+    
+    if crisis_result["crisis_detected"]:
+        # Generate crisis response
+        response = response_generator.generate_response(
+            crisis_type=crisis_result.get("primary_category"),
+            user_message=text,
+            confidence=crisis_result["combined_confidence"],
+            immediate_risk=crisis_result["immediate_risk"]
+        )
+        return response["response"]
+    else:
+        return "No crisis detected. Normal processing continues."
+```
+
+#### **2. API Integration**
+```python
+import requests
+
+def analyze_crisis(text):
+    response = requests.post('http://localhost:5000/analyze', 
+                           json={'text': text})
+    return response.json()
+```
+
+#### **3. Mobile SDK Integration**
+```swift
+// iOS Swift
+let sdk = CrisisResponseSDK()
+let result = sdk.analyzeText(userInput)
+if result.isCrisis {
+    showCrisisResponse(result.response)
+}
+```
+
+### Integration Examples
+
+See the `examples/` directory for complete integration examples:
+- **Web App Integration** (`examples/web_app/`)
+- **Mobile App Integration** (`examples/mobile_app/`)
+- **API Server Integration** (`examples/api_server/`)
+- **Chat Bot Integration** (`examples/chatbot/`)
+
+### API Documentation
+
+Complete API documentation is available in `API_DOCUMENTATION.md`.
+
 ## 🔧 Configuration
 
 ### Model Selection
