@@ -31,13 +31,12 @@ class GemmaSOSDemo:
         # Demo scenarios for testing
         self.demo_scenarios = self._load_demo_scenarios()
         
-        # Crisis detection keywords (simplified for demo)
-        self.crisis_keywords = {
-            "self_harm": ["cut", "hurt myself", "bleeding", "razor", "knife"],
-            "suicide": ["kill myself", "end it all", "suicide", "not worth living"],
-            "violence": ["hurt someone", "attack", "fight", "violence"],
-            "abuse": ["abuse", "hit me", "scared", "unsafe"],
-            "overdose": ["overdose", "too many pills", "unconscious"]
+        # Crisis detection using Gemma safety features (simplified for demo)
+        self.safety_categories = {
+            "self_harm": "Content expressing intent to harm oneself",
+            "violence": "Content expressing intent to harm others", 
+            "harassment": "Content that is abusive or threatening",
+            "dangerous_content": "Content promoting dangerous activities"
         }
         
         # Crisis resources
@@ -138,7 +137,7 @@ class GemmaSOSDemo:
     
     def detect_crisis_simple(self, text: str) -> Dict[str, Any]:
         """
-        Simple crisis detection for demo purposes
+        Simple crisis detection using Gemma safety features for demo purposes
         
         Args:
             text: Input text to analyze
@@ -154,78 +153,104 @@ class GemmaSOSDemo:
                 "message": "No text provided for analysis."
             }
         
-        text_lower = text.lower()
+        # Simulate Gemma safety analysis
+        safety_analysis = self._simulate_gemma_safety_analysis(text)
+        
+        # Map safety categories to crisis categories
         detected_crises = []
         max_confidence = 0.0
         
-        # Check each crisis category
-        for category, keywords in self.crisis_keywords.items():
-            matches = [keyword for keyword in keywords if keyword in text_lower]
-            
-            if matches:
-                confidence = min(len(matches) / len(keywords) + 0.3, 1.0)
-                detected_crises.append({
-                    "category": category,
-                    "confidence": confidence,
-                    "matched_keywords": matches
-                })
-                max_confidence = max(max_confidence, confidence)
-        
-        # Simulate Gemma model analysis
-        gemma_analysis = self._simulate_gemma_analysis(text, detected_crises)
+        for safety_category, safety_data in safety_analysis.items():
+            if safety_data.get("detected", False) and safety_data.get("confidence", 0) > 0.3:
+                # Map to crisis category
+                crisis_category = self._map_safety_to_crisis(safety_category)
+                if crisis_category:
+                    detected_crises.append({
+                        "category": crisis_category,
+                        "confidence": safety_data["confidence"],
+                        "safety_category": safety_category,
+                        "severity": safety_data.get("severity", "medium"),
+                        "reasoning": safety_data.get("reasoning", "")
+                    })
+                    max_confidence = max(max_confidence, safety_data["confidence"])
         
         return {
             "crisis_detected": len(detected_crises) > 0,
             "categories": detected_crises,
             "confidence": max_confidence,
-            "gemma_analysis": gemma_analysis,
-            "message": f"Analysis complete. Found {len(detected_crises)} crisis indicators."
+            "safety_analysis": safety_analysis,
+            "immediate_risk": any(cat.get("severity") == "high" for cat in detected_crises),
+            "message": f"Safety analysis complete. Found {len(detected_crises)} crisis indicators."
         }
     
-    def _simulate_gemma_analysis(self, text: str, detected_crises: List[Dict]) -> Dict[str, Any]:
-        """Simulate Gemma model analysis for demo"""
-        if not detected_crises:
-            return {
-                "crisis_level": "none",
-                "immediate_risk": False,
-                "analysis": "No crisis indicators detected in the text.",
-                "confidence": 0.8
-            }
+    def _simulate_gemma_safety_analysis(self, text: str) -> Dict[str, Any]:
+        """Simulate Gemma safety analysis for demo"""
+        text_lower = text.lower()
         
-        # Determine crisis level based on detected categories
-        crisis_level = "low"
-        immediate_risk = False
+        # Simulate safety analysis for each category
+        safety_analysis = {}
         
-        for crisis in detected_crises:
-            if crisis["confidence"] > 0.7:
-                crisis_level = "high"
-                immediate_risk = True
-            elif crisis["confidence"] > 0.5:
-                crisis_level = "medium"
-        
-        # Generate analysis text
-        if immediate_risk:
-            analysis = "High-risk crisis situation detected. Immediate intervention recommended."
-        elif crisis_level == "medium":
-            analysis = "Medium-risk situation detected. Support and monitoring recommended."
-        else:
-            analysis = "Low-risk situation detected. General support and resources recommended."
-        
-        return {
-            "crisis_level": crisis_level,
-            "immediate_risk": immediate_risk,
-            "analysis": analysis,
-            "confidence": 0.85
+        # Self-harm analysis
+        self_harm_indicators = ["hurt myself", "cut myself", "kill myself", "end it all", "not worth living", "suicide"]
+        self_harm_detected = any(indicator in text_lower for indicator in self_harm_indicators)
+        safety_analysis["self_harm"] = {
+            "detected": self_harm_detected,
+            "confidence": 0.8 if self_harm_detected else 0.1,
+            "severity": "high" if self_harm_detected else "low",
+            "reasoning": "Self-harm indicators detected" if self_harm_detected else "No self-harm indicators"
         }
+        
+        # Violence analysis
+        violence_indicators = ["hurt someone", "attack", "fight", "violence", "threaten", "revenge"]
+        violence_detected = any(indicator in text_lower for indicator in violence_indicators)
+        safety_analysis["violence"] = {
+            "detected": violence_detected,
+            "confidence": 0.7 if violence_detected else 0.1,
+            "severity": "medium" if violence_detected else "low",
+            "reasoning": "Violence indicators detected" if violence_detected else "No violence indicators"
+        }
+        
+        # Harassment analysis
+        harassment_indicators = ["abuse", "hit me", "scared", "threaten", "intimidate", "unsafe"]
+        harassment_detected = any(indicator in text_lower for indicator in harassment_indicators)
+        safety_analysis["harassment"] = {
+            "detected": harassment_detected,
+            "confidence": 0.8 if harassment_detected else 0.1,
+            "severity": "high" if harassment_detected else "low",
+            "reasoning": "Harassment indicators detected" if harassment_detected else "No harassment indicators"
+        }
+        
+        # Dangerous content analysis
+        dangerous_indicators = ["overdose", "too many pills", "drugs", "poison", "unconscious", "sick"]
+        dangerous_detected = any(indicator in text_lower for indicator in dangerous_indicators)
+        safety_analysis["dangerous_content"] = {
+            "detected": dangerous_detected,
+            "confidence": 0.9 if dangerous_detected else 0.1,
+            "severity": "high" if dangerous_detected else "low",
+            "reasoning": "Dangerous content indicators detected" if dangerous_detected else "No dangerous content indicators"
+        }
+        
+        return safety_analysis
+    
+    def _map_safety_to_crisis(self, safety_category: str) -> str:
+        """Map safety category to crisis category"""
+        mapping = {
+            "self_harm": "self_harm",
+            "violence": "violence",
+            "harassment": "abuse", 
+            "dangerous_content": "overdose"
+        }
+        return mapping.get(safety_category, "general")
     
     def generate_response(self, crisis_result: Dict[str, Any], user_text: str) -> str:
-        """Generate empathetic response based on crisis detection"""
+        """Generate empathetic response based on safety-aware crisis detection"""
         if not crisis_result["crisis_detected"]:
             return self._generate_general_response()
         
         # Get primary crisis category
         primary_category = crisis_result["categories"][0]["category"] if crisis_result["categories"] else "general"
-        immediate_risk = crisis_result.get("gemma_analysis", {}).get("immediate_risk", False)
+        immediate_risk = crisis_result.get("immediate_risk", False)
+        safety_analysis = crisis_result.get("safety_analysis", {})
         
         # Generate response based on category
         response_templates = {
@@ -387,15 +412,15 @@ def create_demo_interface():
                 
                 # Results Section
                 with gr.Group():
-                    gr.Markdown("### 🔍 Analysis Results")
+                    gr.Markdown("### 🔍 Safety Analysis Results")
                     
                     crisis_detection = gr.JSON(
                         label="Crisis Detection Results",
                         value={}
                     )
                     
-                    gemma_analysis = gr.JSON(
-                        label="Gemma Model Analysis",
+                    safety_analysis = gr.JSON(
+                        label="Gemma Safety Analysis",
                         value={}
                     )
                 
@@ -417,14 +442,19 @@ def create_demo_interface():
                     gr.Markdown("""
                     **What this demo shows:**
                     
-                    1. **Crisis Detection**: Identifies crisis indicators in text
-                    2. **Gemma Analysis**: Uses AI to assess risk level
-                    3. **Response Generation**: Creates empathetic responses
+                    1. **Safety Analysis**: Uses Gemma's built-in safety features
+                    2. **Crisis Detection**: Maps safety categories to crisis types
+                    3. **Response Generation**: Creates safety-aware empathetic responses
                     4. **Resource Matching**: Provides relevant help resources
                     
-                    **Crisis Types Detected:**
-                    - Self-harm
-                    - Suicide risk
+                    **Safety Categories Analyzed:**
+                    - Self-harm content
+                    - Violence threats
+                    - Harassment/abuse
+                    - Dangerous content
+                    
+                    **Crisis Types Mapped:**
+                    - Self-harm & suicide risk
                     - Violence threats
                     - Abuse situations
                     - Overdose scenarios
@@ -471,7 +501,7 @@ def create_demo_interface():
             if not text.strip():
                 return {}, {}, "Please enter some text to analyze."
             
-            # Detect crisis
+            # Detect crisis using safety analysis
             crisis_result = demo.detect_crisis_simple(text)
             
             # Only generate response if crisis is detected
@@ -480,17 +510,17 @@ def create_demo_interface():
             else:
                 response = "No crisis indicators detected. This appears to be a general message. If you're experiencing distress, please don't hesitate to reach out for support."
             
-            # Extract Gemma analysis
-            gemma_analysis = crisis_result.get("gemma_analysis", {})
+            # Extract safety analysis
+            safety_analysis = crisis_result.get("safety_analysis", {})
             
-            return crisis_result, gemma_analysis, response
+            return crisis_result, safety_analysis, response
         
         def clear_and_analyze(text):
             """Clear response and analyze new text"""
             if not text.strip():
                 return {}, {}, "Please enter some text to analyze."
             
-            # Detect crisis
+            # Detect crisis using safety analysis
             crisis_result = demo.detect_crisis_simple(text)
             
             # Only generate response if crisis is detected
@@ -499,10 +529,10 @@ def create_demo_interface():
             else:
                 response = "No crisis indicators detected. This appears to be a general message. If you're experiencing distress, please don't hesitate to reach out for support."
             
-            # Extract Gemma analysis
-            gemma_analysis = crisis_result.get("gemma_analysis", {})
+            # Extract safety analysis
+            safety_analysis = crisis_result.get("safety_analysis", {})
             
-            return crisis_result, gemma_analysis, response
+            return crisis_result, safety_analysis, response
         
         def clear_all():
             """Clear all outputs"""
@@ -523,18 +553,18 @@ def create_demo_interface():
         analyze_btn.click(
             clear_and_analyze,
             inputs=[text_input],
-            outputs=[crisis_detection, gemma_analysis, response_output]
+            outputs=[crisis_detection, safety_analysis, response_output]
         )
         
         text_input.submit(
             clear_and_analyze,
             inputs=[text_input],
-            outputs=[crisis_detection, gemma_analysis, response_output]
+            outputs=[crisis_detection, safety_analysis, response_output]
         )
         
         clear_btn.click(
             clear_all,
-            outputs=[crisis_detection, gemma_analysis, response_output, text_input]
+            outputs=[crisis_detection, safety_analysis, response_output, text_input]
         )
     
     return interface

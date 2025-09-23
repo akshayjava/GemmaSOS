@@ -1,6 +1,6 @@
 """
-Crisis Detection System using Google's Gemma Model
-Detects various crisis situations from multimodal input (text, images)
+Crisis Detection System using Google's Gemma Model Safety Features
+Detects various crisis situations using Gemma's built-in safety capabilities
 """
 
 import torch
@@ -9,6 +9,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, AutoProcessor
 from PIL import Image
 import cv2
 import re
+import json
 from typing import Dict, List, Tuple, Optional, Union
 import logging
 from config import Config
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 class CrisisDetector:
     """
-    On-device crisis detection system using Gemma model
+    On-device crisis detection system using Gemma model safety features
     """
     
     def __init__(self, model_name: str = None):
@@ -33,13 +34,14 @@ class CrisisDetector:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info(f"Using device: {self.device}")
         
-        # Crisis categories and their keywords from config
-        self.crisis_categories = {}
-        for category, keywords in Config.CRISIS_KEYWORDS.items():
-            self.crisis_categories[category] = {
-                "keywords": keywords,
-                "severity_keywords": Config.SEVERITY_KEYWORDS.get(category, [])
-            }
+        # Crisis categories mapped to Gemma safety categories
+        self.crisis_mapping = {
+            "self_harm": "self_harm",
+            "suicide": "self_harm", 
+            "violence": "violence",
+            "abuse": "harassment",
+            "overdose": "dangerous_content"
+        }
         
         # Initialize model and tokenizer
         self._load_model()
@@ -71,7 +73,7 @@ class CrisisDetector:
     
     def detect_crisis_from_text(self, text: str) -> Dict[str, any]:
         """
-        Detect crisis situations from text input
+        Detect crisis situations from text input using Gemma's safety features
         
         Args:
             text: Input text to analyze
@@ -82,40 +84,33 @@ class CrisisDetector:
         if not text or not text.strip():
             return {"crisis_detected": False, "categories": [], "confidence": 0.0}
         
-        text_lower = text.lower()
+        # Use Gemma's safety analysis
+        safety_analysis = self._analyze_with_gemma_safety(text)
+        
+        # Map Gemma safety categories to crisis categories
         detected_crises = []
         max_confidence = 0.0
         
-        # Check each crisis category
-        for category, config in self.crisis_categories.items():
-            keyword_matches = sum(1 for keyword in config["keywords"] 
-                                if keyword in text_lower)
-            severity_matches = sum(1 for keyword in config["severity_keywords"] 
-                                 if keyword in text_lower)
-            
-            # Calculate confidence based on keyword matches
-            total_keywords = len(config["keywords"])
-            confidence = (keyword_matches / total_keywords) * 0.7 + (severity_matches * 0.3)
-            
-            if confidence > 0.1:  # Threshold for detection
-                detected_crises.append({
-                    "category": category,
-                    "confidence": min(confidence, 1.0),
-                    "keyword_matches": keyword_matches,
-                    "severity_indicators": severity_matches
-                })
-                max_confidence = max(max_confidence, confidence)
-        
-        # Use Gemma model for additional analysis if crisis detected
-        if detected_crises:
-            gemma_analysis = self._analyze_with_gemma(text)
-            max_confidence = max(max_confidence, gemma_analysis.get("confidence", 0.0))
+        for safety_category, safety_data in safety_analysis.items():
+            if safety_data.get("detected", False) and safety_data.get("confidence", 0) > 0.3:
+                # Map to our crisis categories
+                crisis_category = self._map_safety_to_crisis(safety_category)
+                if crisis_category:
+                    detected_crises.append({
+                        "category": crisis_category,
+                        "confidence": safety_data["confidence"],
+                        "safety_category": safety_category,
+                        "severity": safety_data.get("severity", "medium"),
+                        "reasoning": safety_data.get("reasoning", "")
+                    })
+                    max_confidence = max(max_confidence, safety_data["confidence"])
         
         return {
             "crisis_detected": len(detected_crises) > 0,
             "categories": detected_crises,
             "confidence": max_confidence,
-            "gemma_analysis": gemma_analysis if detected_crises else None
+            "safety_analysis": safety_analysis,
+            "immediate_risk": any(cat.get("severity") == "high" for cat in detected_crises)
         }
     
     def detect_crisis_from_image(self, image: Union[str, Image.Image]) -> Dict[str, any]:
@@ -192,40 +187,50 @@ class CrisisDetector:
         
         return indicators
     
-    def _analyze_with_gemma(self, text: str) -> Dict[str, any]:
+    def _analyze_with_gemma_safety(self, text: str) -> Dict[str, any]:
         """
-        Use Gemma model for additional crisis analysis
+        Use Gemma model for safety analysis using structured safety prompts
         
         Args:
             text: Text to analyze
             
         Returns:
-            Analysis results from Gemma model
+            Safety analysis results from Gemma model
         """
         try:
-            # Create a prompt for crisis analysis
+            # Create a structured safety analysis prompt
             prompt = f"""<start_of_turn>user
-Analyze the following text for crisis indicators. Respond with a JSON object containing:
-- crisis_level: "low", "medium", "high", or "none"
-- concern_areas: list of concerning topics
-- immediate_risk: true/false
-- recommended_action: brief recommendation
+You are a safety content moderation expert. Analyze the following text for harmful content across these categories:
 
-Text: "{text}"
+1. Self-harm: Content expressing intent to harm oneself, including suicide ideation, self-injury, or self-destructive behavior
+2. Violence: Content expressing intent to harm others, threats of violence, or promoting violence
+3. Harassment: Content that is abusive, threatening, or intended to intimidate or harm others
+4. Dangerous content: Content that promotes dangerous activities, substance abuse, or harmful behaviors
+
+For each category, determine:
+- detected: true/false
+- confidence: 0.0-1.0
+- severity: "low", "medium", "high"
+- reasoning: brief explanation
+
+Respond with a JSON object containing these categories.
+
+Text to analyze: "{text}"
 <end_of_turn>
 <start_of_turn>model"""
 
             # Tokenize and generate
-            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
+            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024)
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
             
             with torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
-                    max_new_tokens=200,
-                    temperature=0.3,
+                    max_new_tokens=300,
+                    temperature=0.1,  # Low temperature for consistent safety analysis
                     do_sample=True,
-                    pad_token_id=self.tokenizer.eos_token_id
+                    pad_token_id=self.tokenizer.eos_token_id,
+                    eos_token_id=self.tokenizer.eos_token_id
                 )
             
             response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
@@ -236,37 +241,81 @@ Text: "{text}"
             else:
                 model_response = response
             
-            # Parse response (basic parsing)
-            crisis_level = "none"
-            immediate_risk = False
+            # Parse JSON response
+            try:
+                # Try to extract JSON from the response
+                json_start = model_response.find('{')
+                json_end = model_response.rfind('}') + 1
+                if json_start != -1 and json_end > json_start:
+                    json_str = model_response[json_start:json_end]
+                    safety_data = json.loads(json_str)
+                else:
+                    # Fallback parsing if JSON extraction fails
+                    safety_data = self._parse_safety_response_fallback(model_response)
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning(f"Failed to parse JSON response: {e}")
+                safety_data = self._parse_safety_response_fallback(model_response)
             
-            if "high" in model_response.lower():
-                crisis_level = "high"
-                immediate_risk = True
-            elif "medium" in model_response.lower():
-                crisis_level = "medium"
-            elif "low" in model_response.lower():
-                crisis_level = "low"
-            
-            return {
-                "crisis_level": crisis_level,
-                "immediate_risk": immediate_risk,
-                "raw_response": model_response,
-                "confidence": 0.8 if immediate_risk else 0.5
-            }
+            return safety_data
             
         except Exception as e:
-            logger.error(f"Error in Gemma analysis: {e}")
+            logger.error(f"Error in Gemma safety analysis: {e}")
             return {
-                "crisis_level": "none",
-                "immediate_risk": False,
-                "raw_response": "",
-                "confidence": 0.0
+                "self_harm": {"detected": False, "confidence": 0.0, "severity": "low", "reasoning": "Analysis failed"},
+                "violence": {"detected": False, "confidence": 0.0, "severity": "low", "reasoning": "Analysis failed"},
+                "harassment": {"detected": False, "confidence": 0.0, "severity": "low", "reasoning": "Analysis failed"},
+                "dangerous_content": {"detected": False, "confidence": 0.0, "severity": "low", "reasoning": "Analysis failed"}
             }
+    
+    def _parse_safety_response_fallback(self, response: str) -> Dict[str, any]:
+        """Fallback parser for safety response when JSON parsing fails"""
+        response_lower = response.lower()
+        
+        # Default safety categories
+        safety_data = {
+            "self_harm": {"detected": False, "confidence": 0.0, "severity": "low", "reasoning": "Fallback analysis"},
+            "violence": {"detected": False, "confidence": 0.0, "severity": "low", "reasoning": "Fallback analysis"},
+            "harassment": {"detected": False, "confidence": 0.0, "severity": "low", "reasoning": "Fallback analysis"},
+            "dangerous_content": {"detected": False, "confidence": 0.0, "severity": "low", "reasoning": "Fallback analysis"}
+        }
+        
+        # Simple keyword-based fallback analysis
+        self_harm_indicators = ["self-harm", "suicide", "kill myself", "hurt myself", "cut myself"]
+        violence_indicators = ["violence", "hurt someone", "attack", "fight", "threaten"]
+        harassment_indicators = ["harassment", "abuse", "threaten", "intimidate", "bully"]
+        dangerous_indicators = ["dangerous", "overdose", "drugs", "poison", "harmful"]
+        
+        # Check for self-harm
+        if any(indicator in response_lower for indicator in self_harm_indicators):
+            safety_data["self_harm"] = {"detected": True, "confidence": 0.7, "severity": "high", "reasoning": "Self-harm indicators detected"}
+        
+        # Check for violence
+        if any(indicator in response_lower for indicator in violence_indicators):
+            safety_data["violence"] = {"detected": True, "confidence": 0.6, "severity": "medium", "reasoning": "Violence indicators detected"}
+        
+        # Check for harassment
+        if any(indicator in response_lower for indicator in harassment_indicators):
+            safety_data["harassment"] = {"detected": True, "confidence": 0.6, "severity": "medium", "reasoning": "Harassment indicators detected"}
+        
+        # Check for dangerous content
+        if any(indicator in response_lower for indicator in dangerous_indicators):
+            safety_data["dangerous_content"] = {"detected": True, "confidence": 0.6, "severity": "medium", "reasoning": "Dangerous content indicators detected"}
+        
+        return safety_data
+    
+    def _map_safety_to_crisis(self, safety_category: str) -> Optional[str]:
+        """Map Gemma safety categories to crisis categories"""
+        mapping = {
+            "self_harm": "self_harm",
+            "violence": "violence", 
+            "harassment": "abuse",
+            "dangerous_content": "overdose"
+        }
+        return mapping.get(safety_category)
     
     def detect_multimodal_crisis(self, text: str = None, image: Union[str, Image.Image] = None) -> Dict[str, any]:
         """
-        Detect crisis situations from multimodal input
+        Detect crisis situations from multimodal input using Gemma safety features
         
         Args:
             text: Text input (optional)
@@ -307,9 +356,9 @@ Text: "{text}"
                 results["crisis_detected"] = True
                 results["combined_confidence"] = max(results["combined_confidence"], image_results["confidence"])
         
-        # Check for immediate risk
-        if results["text_analysis"] and results["text_analysis"].get("gemma_analysis"):
-            results["immediate_risk"] = results["text_analysis"]["gemma_analysis"].get("immediate_risk", False)
+        # Check for immediate risk from text analysis
+        if results["text_analysis"]:
+            results["immediate_risk"] = results["text_analysis"].get("immediate_risk", False)
         
         return results
 

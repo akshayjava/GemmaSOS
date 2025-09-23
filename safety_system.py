@@ -242,7 +242,7 @@ class SafetySystem:
     
     def assess_risk_level(self, crisis_detection_result: Dict[str, Any]) -> str:
         """
-        Assess risk level based on crisis detection results
+        Assess risk level based on crisis detection results using Gemma safety analysis
         
         Args:
             crisis_detection_result: Results from crisis detection
@@ -252,8 +252,17 @@ class SafetySystem:
         """
         confidence = crisis_detection_result.get("confidence", 0.0)
         immediate_risk = crisis_detection_result.get("immediate_risk", False)
+        safety_analysis = crisis_detection_result.get("safety_analysis", {})
         
-        if immediate_risk or confidence >= self.safety_thresholds["immediate_risk"]:
+        # Check for high severity in safety analysis
+        high_severity_detected = False
+        if safety_analysis:
+            for category, data in safety_analysis.items():
+                if data.get("detected", False) and data.get("severity") == "high":
+                    high_severity_detected = True
+                    break
+        
+        if immediate_risk or confidence >= self.safety_thresholds["immediate_risk"] or high_severity_detected:
             return "immediate"
         elif confidence >= self.safety_thresholds["high_risk"]:
             return "high"

@@ -216,34 +216,36 @@ class CrisisResponseGenerator:
                          crisis_type: str, 
                          user_message: str, 
                          confidence: float,
-                         immediate_risk: bool = False) -> Dict[str, any]:
+                         immediate_risk: bool = False,
+                         safety_analysis: Dict = None) -> Dict[str, any]:
         """
-        Generate an empathetic response for a crisis situation
+        Generate an empathetic response for a crisis situation using Gemma safety analysis
         
         Args:
             crisis_type: Type of crisis detected
             user_message: User's original message
             confidence: Confidence level of crisis detection
             immediate_risk: Whether there's immediate risk
+            safety_analysis: Detailed safety analysis from Gemma
             
         Returns:
             Dictionary containing response and resources
         """
         try:
-            # Select appropriate response template
-            response_type = "immediate" if immediate_risk or confidence > 0.7 else "supportive"
+            # Determine response urgency based on safety analysis
+            response_type = self._determine_response_type(confidence, immediate_risk, safety_analysis)
             
             if crisis_type in self.response_templates:
                 base_response = random.choice(self.response_templates[crisis_type][response_type])
             else:
                 base_response = "I'm here to listen and support you. You don't have to face this alone."
             
-            # Generate personalized response using Gemma
-            personalized_response = self._generate_personalized_response(
-                user_message, base_response, crisis_type, immediate_risk
+            # Generate personalized response using Gemma with safety context
+            personalized_response = self._generate_safety_aware_response(
+                user_message, base_response, crisis_type, immediate_risk, safety_analysis
             )
             
-            # Get relevant resources
+            # Get relevant resources based on safety analysis
             resources = self._get_relevant_resources(crisis_type, immediate_risk)
             
             # Create safety plan if needed
@@ -255,61 +257,91 @@ class CrisisResponseGenerator:
                 "safety_plan": safety_plan,
                 "immediate_risk": immediate_risk,
                 "crisis_type": crisis_type,
-                "confidence": confidence
+                "confidence": confidence,
+                "safety_analysis": safety_analysis
             }
             
         except Exception as e:
             logger.error(f"Error generating response: {e}")
             return self._get_fallback_response(crisis_type, immediate_risk)
     
-    def _generate_personalized_response(self, 
+    def _determine_response_type(self, confidence: float, immediate_risk: bool, safety_analysis: Dict = None) -> str:
+        """Determine response type based on safety analysis"""
+        if immediate_risk or confidence > 0.8:
+            return "immediate"
+        elif safety_analysis:
+            # Check for high severity in safety analysis
+            for category, data in safety_analysis.items():
+                if data.get("severity") == "high" and data.get("detected", False):
+                    return "immediate"
+        elif confidence > 0.6:
+            return "supportive"
+        else:
+            return "supportive"
+    
+    def _generate_safety_aware_response(self, 
                                       user_message: str, 
                                       base_response: str,
                                       crisis_type: str,
-                                      immediate_risk: bool) -> str:
+                                      immediate_risk: bool,
+                                      safety_analysis: Dict = None) -> str:
         """
-        Use Gemma model to generate a personalized response
+        Use Gemma model to generate a safety-aware personalized response
         
         Args:
             user_message: User's original message
             base_response: Base response template
             crisis_type: Type of crisis
             immediate_risk: Whether there's immediate risk
+            safety_analysis: Detailed safety analysis from Gemma
             
         Returns:
             Personalized response text
         """
         try:
-            # Create a prompt for response generation
+            # Create a safety-aware prompt for response generation
             risk_level = "immediate crisis" if immediate_risk else "crisis situation"
             
+            # Build safety context for the prompt
+            safety_context = ""
+            if safety_analysis:
+                detected_categories = [cat for cat, data in safety_analysis.items() 
+                                     if data.get("detected", False)]
+                if detected_categories:
+                    safety_context = f"\nSafety Analysis: Detected {', '.join(detected_categories)} with severity levels: " + \
+                                   ", ".join([f"{cat}: {data.get('severity', 'unknown')}" 
+                                            for cat, data in safety_analysis.items() 
+                                            if data.get("detected", False)])
+            
             prompt = f"""<start_of_turn>user
-You are a compassionate crisis counselor. Generate a supportive, empathetic response for someone in a {risk_level} related to {crisis_type}.
+You are a compassionate crisis counselor with advanced safety training. Generate a supportive, empathetic response for someone in a {risk_level} related to {crisis_type}.
 
-Guidelines:
+Safety Guidelines:
 - Be warm, non-judgmental, and validating
 - Acknowledge their pain without minimizing it
-- Offer hope and support
+- Offer hope and support while maintaining safety awareness
 - Keep response under 150 words
 - Use "I" statements to show care
 - Avoid giving medical advice
+- Prioritize immediate safety if high risk detected
+- Provide appropriate crisis resources
 
 User's message: "{user_message}"
-Base response: "{base_response}"
+Base response: "{base_response}"{safety_context}
 
-Generate a personalized, empathetic response:
+Generate a personalized, empathetic, and safety-aware response:
 <end_of_turn>
 <start_of_turn>model"""
 
             # Tokenize and generate
-            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
+            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024)
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
             
             with torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
                     max_new_tokens=200,
-                    temperature=0.7,
+                    temperature=0.6,  # Slightly lower temperature for more consistent safety-aware responses
                     do_sample=True,
                     pad_token_id=self.tokenizer.eos_token_id,
                     eos_token_id=self.tokenizer.eos_token_id
@@ -333,7 +365,7 @@ Generate a personalized, empathetic response:
             return model_response
             
         except Exception as e:
-            logger.error(f"Error in personalized response generation: {e}")
+            logger.error(f"Error in safety-aware response generation: {e}")
             return base_response
     
     def _get_relevant_resources(self, crisis_type: str, immediate_risk: bool) -> List[Dict]:

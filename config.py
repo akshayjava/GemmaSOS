@@ -20,42 +20,37 @@ class Config:
         "low_risk": 0.2
     }
     
-    # Crisis Detection Keywords
-    CRISIS_KEYWORDS = {
-        "self_harm": [
-            "cut", "cutting", "self harm", "self-harm", "hurt myself", 
-            "bleeding", "wound", "scar", "razor", "knife", "sharp",
-            "burn", "burning", "hit myself", "punch myself"
-        ],
-        "suicide": [
-            "kill myself", "end it all", "not worth living", "better off dead",
-            "suicide", "take my life", "end my life", "jump", "overdose",
-            "hang myself", "shoot myself", "no point", "hopeless"
-        ],
-        "violence": [
-            "hurt someone", "kill someone", "attack", "fight", "violence",
-            "beat up", "punch", "hit", "stab", "shoot", "threaten",
-            "revenge", "payback", "destroy", "harm"
-        ],
-        "abuse": [
-            "abuse", "abused", "hit me", "hurt me", "beat me", "violence",
-            "threaten", "scared", "afraid", "unsafe", "hurt", "pain",
-            "control", "manipulate", "force", "coerce"
-        ],
-        "overdose": [
-            "overdose", "too much", "pills", "drugs", "medication",
-            "poison", "sick", "nausea", "dizzy", "unconscious",
-            "emergency", "hospital", "ambulance"
-        ]
+    # Gemma Safety Categories Configuration
+    GEMMA_SAFETY_CATEGORIES = {
+        "self_harm": {
+            "description": "Content expressing intent to harm oneself, including suicide ideation, self-injury, or self-destructive behavior",
+            "severity_levels": ["low", "medium", "high"],
+            "crisis_mapping": "self_harm"
+        },
+        "violence": {
+            "description": "Content expressing intent to harm others, threats of violence, or promoting violence",
+            "severity_levels": ["low", "medium", "high"],
+            "crisis_mapping": "violence"
+        },
+        "harassment": {
+            "description": "Content that is abusive, threatening, or intended to intimidate or harm others",
+            "severity_levels": ["low", "medium", "high"],
+            "crisis_mapping": "abuse"
+        },
+        "dangerous_content": {
+            "description": "Content that promotes dangerous activities, substance abuse, or harmful behaviors",
+            "severity_levels": ["low", "medium", "high"],
+            "crisis_mapping": "overdose"
+        }
     }
     
-    # Severity Keywords
-    SEVERITY_KEYWORDS = {
-        "self_harm": ["bleeding", "hospital", "emergency", "serious"],
-        "suicide": ["plan", "method", "tonight", "today", "now"],
-        "violence": ["gun", "weapon", "tonight", "today", "plan"],
-        "abuse": ["emergency", "police", "help", "danger", "now"],
-        "overdose": ["unconscious", "emergency", "hospital", "ambulance", "now"]
+    # Safety Analysis Configuration
+    SAFETY_ANALYSIS_CONFIG = {
+        "confidence_threshold": 0.3,
+        "high_severity_threshold": 0.7,
+        "immediate_risk_indicators": ["high", "immediate", "urgent"],
+        "response_temperature": 0.6,
+        "max_safety_tokens": 300
     }
     
     # Content Filtering Rules
@@ -273,8 +268,8 @@ class Config:
         return {
             "model_name": cls.MODEL_NAME,
             "safety_thresholds": cls.SAFETY_THRESHOLDS,
-            "crisis_keywords": cls.CRISIS_KEYWORDS,
-            "severity_keywords": cls.SEVERITY_KEYWORDS,
+            "gemma_safety_categories": cls.GEMMA_SAFETY_CATEGORIES,
+            "safety_analysis_config": cls.SAFETY_ANALYSIS_CONFIG,
             "content_filters": cls.CONTENT_FILTERS,
             "crisis_resources": cls.CRISIS_RESOURCES,
             "response_templates": cls.RESPONSE_TEMPLATES,

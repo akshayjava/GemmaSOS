@@ -85,7 +85,8 @@ class GemmaSOSApp:
                     crisis_type=crisis_result.get("primary_category", "general"),
                     user_message=text_input or "",
                     confidence=crisis_result["combined_confidence"],
-                    immediate_risk=crisis_result["immediate_risk"]
+                    immediate_risk=crisis_result["immediate_risk"],
+                    safety_analysis=crisis_result.get("safety_analysis")
                 )
                 
                 # Get safety actions
